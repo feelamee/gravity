@@ -1,0 +1,2 @@
+- Game independent code should live here.
+- Dependencies (read detail implementations) of engine/ should not leak into game code.

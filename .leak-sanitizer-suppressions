@@ -1,0 +1,2 @@
+leak:dlopen
+leak:X11_InitKeyboard

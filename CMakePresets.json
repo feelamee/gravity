@@ -1,0 +1,65 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 10,
+        "patch": 0
+    },
+
+    "configurePresets": [
+        {
+            "name": "ninja",
+            "hidden": true,
+            "generator": "Ninja"
+        },
+
+        {
+            "name": "debug-config",
+            "hidden": true,
+            "binaryDir": "build-debug/",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+
+        {
+            "name": "release-config",
+            "hidden": true,
+            "binaryDir": "build-release/",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+
+        {
+            "name": "dev",
+            "displayName": "preset for development",
+            "inherits": [ "debug-config", "ninja" ],
+            "cacheVariables": {
+                "GRAVITY_DEV": "ON"
+            }
+        },
+
+        {
+            "name": "release",
+            "displayName": "preset for release build",
+            "inherits": [ "release-config", "ninja" ]
+        }
+    ],
+
+    "buildPresets": [
+        {
+            "name": "dev",
+            "displayName": "preset for development",
+            "configurePreset": "dev",
+            "jobs": 8
+        },
+
+        {
+            "name": "release",
+            "displayName": "preset for release build",
+            "configurePreset": "release",
+            "jobs": 8
+        }
+    ]
+}
