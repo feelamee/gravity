@@ -12,6 +12,7 @@ target_sources(
     FILES
 		include/engine/fundamental.hpp
 		include/engine/util.hpp
+		include/engine/context.hpp
 
     PRIVATE
     FILE_SET private_headers
@@ -25,6 +26,7 @@ target_sources(
     engine
     PRIVATE
         src/util.cpp
+        src/context.cpp
 )
 target_compile_features(engine PUBLIC cxx_std_20)
 

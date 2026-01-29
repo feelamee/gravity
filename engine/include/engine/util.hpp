@@ -45,6 +45,7 @@ unreachable()
 #endif
 }
 
+// TODO! make ctor tempalte instead of whole class (type-erasure)
 template<typename Fn>
 class scope_exit
 {
