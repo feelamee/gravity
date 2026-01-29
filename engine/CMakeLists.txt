@@ -24,7 +24,7 @@ target_sources(
 target_sources(
     engine
     PRIVATE
-        src/dummy.cpp
+        src/util.cpp
 )
 target_compile_features(engine PUBLIC cxx_std_20)
 
@@ -46,7 +46,7 @@ target_link_libraries(
 )
 
 # TODO! make PRIVATE after removing all SDL code from public interface
-target_link_libraries(engine PUBLIC SDL3::SDL3)
+target_link_libraries(engine PUBLIC SDL3::SDL3 glad::glad)
 
 target_precompile_headers(
     engine

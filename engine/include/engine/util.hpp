@@ -3,7 +3,6 @@
 #include <engine/fundamental.hpp>
 
 #include <type_traits>
-#include <memory>
 #include <string_view>
 #include <source_location>
 
@@ -84,9 +83,37 @@ private:
     Fn fn;
 };
 
-}
+namespace detail
+{
+
+void log_error(int line, char const* fn, char const* fmt, ...);
+
+void gl_check(char const* filename, unsigned int line, char const* expr);
+
+} // namespace detail
+
+} // namespace gt
 
 // TODO! remove or move to separate header
 #define GT_CONCAT(a, b) a ## b
 #define GT_UNIQUE_ID(l) GT_CONCAT(UNIQUE_ID_, l)
-#define SCOPE_EXIT [[maybe_unused]] ::gt::scope_exit GT_UNIQUE_ID(__LINE__) = [&]
+#define GT_SCOPE_EXIT [[maybe_unused]] ::gt::scope_exit GT_UNIQUE_ID(__LINE__) = [&]
+
+// TODO! add GT_DEBUG inside cmake depending on CMAKE_BUILD_TYPE
+#ifndef NDEBUG
+#define GT_GL_CHECK(expr)                                                                          \
+    {                                                                                              \
+        (expr);                                                                                    \
+        ::gt::detail::gl_check(__FILE__, __LINE__, #expr);                                         \
+    }
+
+#define GT_LOG_DEBUG(...)                                                                          \
+    {                                                                                              \
+        ::gt::detail::log_error(__LINE__, __FILE__, __VA_ARGS__);                                  \
+    }
+
+#else
+#define GL_CHECK(expr) (expr)
+#define LOG_DEBUG(...)
+#endif
+
