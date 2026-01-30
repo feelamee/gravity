@@ -1,5 +1,8 @@
 #include <engine/context.hpp>
 
+#include <engine/error.hpp>
+#include <engine/sdl.hpp>
+
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_video.h>
 
@@ -8,10 +11,15 @@
 namespace gt
 {
 
-static void throw_sdl_error()
-{
-    throw error("[ERROR][SDL] {}", SDL_GetError());
-}
+static void APIENTRY gl_debug_message_callback(
+    GLenum source,
+    GLenum type,
+    GLuint id,
+    GLenum severity,
+    GLsizei length,
+    GLchar const* msg,
+    void const*
+);
 
 static context * g_context;
 
@@ -21,7 +29,7 @@ context::context()
         throw error("[ERROR][engine] context must be created only once");
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
-        throw_sdl_error();
+        sdl::throw_error();
 
     window = SDL_CreateWindow(
         "gravity simulation",
@@ -29,32 +37,54 @@ context::context()
         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
     );
     if (!window)
-        throw_sdl_error();
+        sdl::throw_error();
 
+    GLint real_major_version{ 0 };
+    GLint real_minor_version{ 0 };
+    for (auto [major, minor] : { std::pair{4, 3}, std::pair{3, 2} })
     {
-        GLint const desired_major_version{ 3 };
-        GLint const desired_minor_version{ 2 };
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, desired_major_version);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, desired_minor_version);
+        if (!sdl::set_attr(SDL_GL_CONTEXT_MAJOR_VERSION, major))
+            continue;
 
+        if (!sdl::set_attr(SDL_GL_CONTEXT_MINOR_VERSION, minor))
+            continue;
+
+        constexpr auto profile =
 #if defined(__WIN32__)
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+            SDL_GL_CONTEXT_PROFILE_COMPATIBILITY
+#elif defined(__ANDROID__)
+            SDL_GL_CONTEXT_PROFILE_ES
 #else
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+            SDL_GL_CONTEXT_PROFILE_CORE
 #endif
+            ;
 
-        GLint real_major_version{ 0 };
-        SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &real_major_version);
-        GLint real_minor_version{ 0 };
-        SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &real_minor_version);
+        if (!sdl::set_attr(SDL_GL_CONTEXT_PROFILE_MASK, profile))
+            continue;
 
-        SDL_assert(real_major_version >= desired_major_version);
-        SDL_assert(real_minor_version >= desired_minor_version);
+        if (!sdl::get_attr(SDL_GL_CONTEXT_MAJOR_VERSION, &real_major_version))
+            continue;
+
+        if (!sdl::get_attr(SDL_GL_CONTEXT_MINOR_VERSION, &real_minor_version))
+            continue;
+
+        if (real_major_version > major)
+            break;
+
+        if (real_major_version == major && real_minor_version >= minor)
+            break;
     }
+
+    sdl::set_attr(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
 
     glcontext = SDL_GL_CreateContext(window);
     if (!glcontext)
-        throw_sdl_error();
+        sdl::throw_error();
+
+    GT_LOG_DEBUG(
+        "[INFO] OpenGL %d.%d is initialized.\n",
+        real_major_version, real_minor_version
+    );
 
     auto const load_gl_fn = [](char const* fn)
     {
@@ -68,10 +98,16 @@ context::context()
     {
         int w{ 0 }, h{ 0 };
         if (!SDL_GetWindowSize(window, &w, &h))
-            throw_sdl_error();
+            sdl::throw_error();
 
-        GT_GL_CHECK(glViewport(0, 0, w, h));
+        glViewport(0, 0, w, h);
     }
+
+#ifndef NDEBUG
+    glDebugMessageCallback(&gl_debug_message_callback, nullptr);
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+#endif
 
     g_context = this;
 }
@@ -91,5 +127,84 @@ context & ctx()
 
     return *g_context;
 }
+
+void APIENTRY gl_debug_message_callback(
+    GLenum source,
+    GLenum type,
+    GLuint id,
+    GLenum severity,
+    GLsizei length,
+    GLchar const* msg,
+    void const*
+)
+{
+    static GLuint last_id = GLuint(-1);
+    static unsigned message_strick = 0;
+    constexpr unsigned const max_message_strick = 5;
+
+    if (last_id == id)
+        ++message_strick;
+    else
+    {
+        last_id = id;
+        message_strick = 0;
+    }
+
+    if (message_strick == max_message_strick)
+    {
+        SDL_Log(
+            "Last message was repeated %d times. Now it will be suppressed\n",
+            max_message_strick
+        );
+    }
+
+    if (message_strick >= max_message_strick)
+        return;
+
+    char const* source_str;
+    char const* type_str;
+    char const* severity_str;
+
+#define CASE(var, en) case (en): (var) = #en; break
+
+    // TODO! somehow match source/type/severity to SDL log system?
+    switch (source)
+    {
+        CASE(source_str, GL_DEBUG_SOURCE_API);
+        CASE(source_str, GL_DEBUG_SOURCE_WINDOW_SYSTEM);
+        CASE(source_str, GL_DEBUG_SOURCE_SHADER_COMPILER);
+        CASE(source_str, GL_DEBUG_SOURCE_THIRD_PARTY);
+        CASE(source_str, GL_DEBUG_SOURCE_APPLICATION);
+        CASE(source_str, GL_DEBUG_SOURCE_OTHER);
+        default: source_str = "GL_DEBUG_SOURCE_UNKNOWN";
+    }
+
+    switch (type) {
+        CASE(type_str, GL_DEBUG_TYPE_ERROR);
+        CASE(type_str, GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR);
+        CASE(type_str, GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR);
+        CASE(type_str, GL_DEBUG_TYPE_PORTABILITY);
+        CASE(type_str, GL_DEBUG_TYPE_PERFORMANCE);
+        CASE(type_str, GL_DEBUG_TYPE_OTHER);
+        CASE(type_str, GL_DEBUG_TYPE_MARKER);
+        default: type_str = "GL_DEBUG_TYPE_UNKNOWN";
+    }
+
+    switch (severity) {
+        CASE(severity_str, GL_DEBUG_SEVERITY_HIGH);
+        CASE(severity_str, GL_DEBUG_SEVERITY_MEDIUM);
+        CASE(severity_str, GL_DEBUG_SEVERITY_LOW);
+        CASE(severity_str, GL_DEBUG_SEVERITY_NOTIFICATION);
+        default: severity_str = "GL_DEBUG_SEVERITY_UNKNOWN";
+    }
+
+#undef CASE
+
+    SDL_Log(
+        "[ID %d] [%s] [%s] [%s]:\n    %.*s\n",
+        id, type_str, severity_str, source_str, length, msg
+    );
+}
+
 
 }
