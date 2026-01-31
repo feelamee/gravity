@@ -75,6 +75,7 @@ target_compile_options(
         -Wall -Werror -pedantic
 
         -Wno-error=unused
+        -Wno-error=unused-but-set-variable
 )
 
 function(dbg var)

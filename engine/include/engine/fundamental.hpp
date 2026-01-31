@@ -21,4 +21,8 @@ using u64 = std::uint64_t;
 
 using byte = std::byte;
 
+using f32 = float;
+static_assert(CHAR_BIT == 8);
+static_assert(sizeof(f32) == 4);
+
 }

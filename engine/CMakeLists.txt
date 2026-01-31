@@ -15,6 +15,7 @@ target_sources(
 		include/engine/context.hpp
 		include/engine/error.hpp
 		include/engine/sdl.hpp
+		include/engine/math.hpp
 
     PRIVATE
     FILE_SET private_headers
@@ -40,6 +41,12 @@ CPMAddPackage(
   GIT_TAG release-3.4.0
   OPTIONS "SDL_ASAN ${GRAVITY_SANITIZERS}"
 )
+CPMAddPackage(
+  NAME glm
+  GIT_REPOSITORY "https://github.com/g-truc/glm"
+  GIT_TAG 1.0.3
+  OPTIONS "GLM_ENABLE_CXX_20 ON"
+)
 
 target_link_libraries(
     engine
@@ -50,8 +57,10 @@ target_link_libraries(
         $<$<BOOL:${GRAVITY_HARDENING}>:hardening>
 )
 
-# TODO! make PRIVATE after removing all SDL code from public interface
+# TODO! make PRIVATE after removing all SDL/OpenGL code from public interface
 target_link_libraries(engine PUBLIC SDL3::SDL3 glad::glad)
+
+target_link_libraries(engine PUBLIC glm::glm)
 
 target_precompile_headers(
     engine
@@ -87,5 +96,5 @@ target_precompile_headers(
 
         <engine/fundamental.hpp>
         <engine/util.hpp>
+        <engine/math.hpp>
 )
-
