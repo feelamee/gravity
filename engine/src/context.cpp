@@ -39,52 +39,24 @@ context::context()
     if (!window)
         sdl::throw_error();
 
-    GLint real_major_version{ 0 };
-    GLint real_minor_version{ 0 };
-    for (auto [major, minor] : { std::pair{4, 3}, std::pair{3, 2} })
-    {
-        if (!sdl::set_attr(SDL_GL_CONTEXT_MAJOR_VERSION, major))
-            continue;
-
-        if (!sdl::set_attr(SDL_GL_CONTEXT_MINOR_VERSION, minor))
-            continue;
-
-        constexpr auto profile =
+    constexpr auto profile =
 #if defined(__WIN32__)
-            SDL_GL_CONTEXT_PROFILE_COMPATIBILITY
+        SDL_GL_CONTEXT_PROFILE_COMPATIBILITY
 #elif defined(__ANDROID__)
-            SDL_GL_CONTEXT_PROFILE_ES
+        SDL_GL_CONTEXT_PROFILE_ES
 #else
-            SDL_GL_CONTEXT_PROFILE_CORE
+        SDL_GL_CONTEXT_PROFILE_CORE
 #endif
-            ;
+        ;
 
-        if (!sdl::set_attr(SDL_GL_CONTEXT_PROFILE_MASK, profile))
-            continue;
-
-        if (!sdl::get_attr(SDL_GL_CONTEXT_MAJOR_VERSION, &real_major_version))
-            continue;
-
-        if (!sdl::get_attr(SDL_GL_CONTEXT_MINOR_VERSION, &real_minor_version))
-            continue;
-
-        if (real_major_version > major)
-            break;
-
-        if (real_major_version == major && real_minor_version >= minor)
-            break;
-    }
-
+    sdl::set_attr(SDL_GL_CONTEXT_PROFILE_MASK, profile);
+    sdl::set_attr(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+    sdl::set_attr(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     sdl::set_attr(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
 
     glcontext = SDL_GL_CreateContext(window);
     if (!glcontext)
         sdl::throw_error();
-
-    GT_LOG_DEBUG(
-        "[INFO] OpenGL %d.%d is initialized.\n",
-        real_major_version, real_minor_version
-    );
 
     auto const load_gl_fn = [](char const* fn)
     {
@@ -94,6 +66,9 @@ context::context()
     int errc = gladLoadGLES2Loader(load_gl_fn);
     if (!errc)
         throw error("[ERROR][engine] gladLoadGLES2Loader failed");
+
+    GLubyte const * real_version = glGetString(GL_VERSION);
+    GT_LOG_DEBUG("[INFO] OpenGL is initialized: %s\n", real_version);
 
     {
         int w{ 0 }, h{ 0 };

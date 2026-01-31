@@ -16,6 +16,7 @@ target_sources(
 		include/engine/error.hpp
 		include/engine/sdl.hpp
 		include/engine/math.hpp
+		include/engine/ranges.hpp
 
     PRIVATE
     FILE_SET private_headers
@@ -97,4 +98,5 @@ target_precompile_headers(
         <engine/fundamental.hpp>
         <engine/util.hpp>
         <engine/math.hpp>
+        <engine/ranges.hpp>
 )
