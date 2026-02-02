@@ -17,6 +17,7 @@ target_sources(
 		include/engine/sdl.hpp
 		include/engine/math.hpp
 		include/engine/ranges.hpp
+		include/engine/mesh.hpp
 
     PRIVATE
     FILE_SET private_headers
@@ -32,6 +33,7 @@ target_sources(
         src/util.cpp
         src/context.cpp
         src/sdl.cpp
+        src/mesh.cpp
 )
 target_compile_features(engine PUBLIC cxx_std_20)
 

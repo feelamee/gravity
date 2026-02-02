@@ -3,6 +3,7 @@
 #include <engine/error.hpp>
 #include <engine/sdl.hpp>
 #include <engine/ranges.hpp>
+#include <engine/mesh.hpp>
 using namespace gt;
 
 #include <SDL3/SDL.h>
@@ -22,7 +23,7 @@ constexpr auto vertex_shader_src = R"(
 #version 320 es
 
 layout (location = 0) in vec3 position;
-layout (location = 1) in vec3 in_color;
+// layout (location = 1) in vec3 in_color;
 
 layout (location = 2) uniform mat4 model;
 layout (location = 3) uniform mat4 view;
@@ -34,7 +35,7 @@ void main()
 {
     vec4 pos = vec4(position, 1.0f);
     gl_Position = projection * view * model * pos;
-    color = in_color;
+    // color = in_color;
 }
 )";
 
@@ -42,13 +43,13 @@ constexpr auto fragment_shader_src = R"(
 #version 320 es
 precision mediump float;
 
-in vec3 color;
+// in vec3 color;
 
 out vec4 out_color;
 
 void main()
 {
-    out_color = vec4(color, 1.0f);
+    out_color = vec4(0.0f, 0.6f, 0.8f, 1.0f);
 }
 )";
 
@@ -81,10 +82,8 @@ static void attach_shader(
 }
 
 static GLuint make_vao(
-    std::span<f32 const> vertices,
-    size_t elements_per_vertex,
-    std::vector<u32> const & attrs, ///< each attr is count of elements
-    std::optional<std::span<u32>> indices
+    mesh const& mesh,
+    std::vector<u32> const& attrs ///< each attr is count of elements
 )
 {
     GLuint vao, vbo;
@@ -93,24 +92,21 @@ static GLuint make_vao(
 
     glBindVertexArray(vao);
 
-    if (indices.has_value())
-    {
-        GLuint ebo;
-        glGenBuffers(1, &ebo);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-        glBufferData(
-            GL_ELEMENT_ARRAY_BUFFER,
-            GLsizeiptr(indices->size() * sizeof(u32)),
-            indices->data(),
-            GL_STATIC_DRAW
-        );
-    }
+    GLuint ebo;
+    glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(
+        GL_ELEMENT_ARRAY_BUFFER,
+        GLsizeiptr(mesh.indices.size() * sizeof(mesh.indices[0])),
+        mesh.indices.data(),
+        GL_STATIC_DRAW
+    );
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(
         GL_ARRAY_BUFFER,
-        GLsizeiptr(vertices.size() * sizeof(f32)),
-        vertices.data(),
+        GLsizeiptr(mesh.vertices.size() * sizeof(mesh.vertices[0])),
+        mesh.vertices.data(),
         GL_STATIC_DRAW
     );
 
@@ -122,7 +118,7 @@ static GLuint make_vao(
             GLint(attr),
             GL_FLOAT,
             GL_FALSE,
-            GLsizei(elements_per_vertex * sizeof(f32)),
+            GLsizei(sizeof(vertex)),
             (void*)offset
         );
         offset += attr * sizeof(f32);
@@ -332,39 +328,12 @@ int main()
         }
     }
 
-    f32 vertices[] = {
-    //     x       y      z      r     g     b
-       -0.25f, -0.25f, -0.25f,  0.0f, 1.0f, 0.0f,
-        0.25f, -0.25f, -0.25f,  0.0f, 0.0f, 1.0f,
-        0.25f,  0.25f, -0.25f,  0.0f, 1.0f, 0.0f,
-       -0.25f,  0.25f, -0.25f,  1.0f, 0.0f, 0.0f,
-       -0.25f, -0.25f, -0.75f,  1.0f, 0.0f, 0.0f,
-        0.25f, -0.25f, -0.75f,  1.0f, 0.0f, 1.0f,
-        0.25f,  0.25f, -0.75f,  1.0f, 1.0f, 0.0f,
-       -0.25f,  0.25f, -0.75f,  0.0f, 1.0f, 1.0f,
-    };
-    u32 indices[] = {
-        // front
-        0, 1, 2,
-        0, 2, 3,
-        // top
-        2, 3, 7,
-        2, 7, 6,
-        // right
-        1, 2, 5,
-        2, 5, 6,
-        // bottom
-        0, 1, 4,
-        1, 4, 5,
-        // left
-        0, 3, 4,
-        3, 4, 7,
-        // back
-        4, 5, 6,
-        4, 6, 7,
-    };
-    size_t const indices_count = sizeof(indices) / sizeof(indices[0]);
-    GLuint vao = make_vao(vertices, 6, { 3, 3 }, indices);
+    std::string_view const suzanne_filepath{ "/home/missed/code/gravity/3d-models/suzanne.obj" };
+    auto suzanne = gt::mesh::from_file(suzanne_filepath);
+    if (!suzanne)
+        throw error{ "[ERROR][ENGINE] can't load mesh: {}", suzanne_filepath };
+
+    GLuint vao = make_vao(*suzanne, { 3 });
 
     vec3 pos{ 0.0f, 0.0f, 0.0f };
     f32 scaling{ 1.0f };
@@ -403,17 +372,16 @@ int main()
                 ),
                 vec3{ scaling }
             );
-            mat4 view = cam.view();
             mat4 projection = perspective(radians(45.0f), 960.0f / 540.0f, 0.01f, 100.0f);
             glUniformMatrix4fv(2, 1, GL_FALSE, value_ptr(model));
-            glUniformMatrix4fv(3, 1, GL_FALSE, value_ptr(view));
+            glUniformMatrix4fv(3, 1, GL_FALSE, value_ptr(cam.view()));
             glUniformMatrix4fv(4, 1, GL_FALSE, value_ptr(projection));
 
             glClearColor(0, 0, 0, 1);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             glBindVertexArray(vao);
-            glDrawElements(GL_TRIANGLES, indices_count, GL_UNSIGNED_INT, nullptr);
+            glDrawElements(GL_TRIANGLES, GLsizei(suzanne->indices.size()), GL_UNSIGNED_INT, nullptr);
 
             if (!SDL_GL_SwapWindow(ctx.window))
                 sdl::log_error();
