@@ -4,6 +4,8 @@
 #include <engine/sdl.hpp>
 #include <engine/ranges.hpp>
 #include <engine/mesh.hpp>
+#include <engine/image.hpp>
+#include <engine/camera.hpp>
 using namespace gt;
 
 #include <SDL3/SDL.h>
@@ -18,24 +20,25 @@ using namespace gt;
 
 #include <cstdlib>
 #include <vector>
+#include <fstream>
 
 constexpr auto vertex_shader_src = R"(
 #version 320 es
 
 layout (location = 0) in vec3 position;
-// layout (location = 1) in vec3 in_color;
+layout (location = 1) in vec2 uv;
 
 layout (location = 2) uniform mat4 model;
 layout (location = 3) uniform mat4 view;
 layout (location = 4) uniform mat4 projection;
 
-out vec3 color;
+layout (location = 5) out vec2 out_uv;
 
 void main()
 {
     vec4 pos = vec4(position, 1.0f);
     gl_Position = projection * view * model * pos;
-    // color = in_color;
+    out_uv = vec2(uv.x, 1.0f - uv.y);
 }
 )";
 
@@ -43,13 +46,15 @@ constexpr auto fragment_shader_src = R"(
 #version 320 es
 precision mediump float;
 
-// in vec3 color;
+layout (location = 5) in vec2 uv;
+
+layout (location = 6) uniform sampler2D tex;
 
 out vec4 out_color;
 
 void main()
 {
-    out_color = vec4(0.0f, 0.6f, 0.8f, 1.0f);
+    out_color = texture(tex, uv);
 }
 )";
 
@@ -133,179 +138,20 @@ static GLuint make_vao(
     return vao;
 }
 
-struct camera
+static GLuint make_tex(image const& img)
 {
-    camera()
-        : camera({ 0.0f, 0, 0 }, { 0.0f, 0, -1 }, { 0.0f, 1, 0 })
-    {
-    }
+    GLuint tex;
+    glGenTextures(1, &tex);
 
-    camera(vec3 const& pos, vec3 const& dir, vec3 const& up)
-        : init_position{ pos }
-        , init_direction{ dir }
-        , world_up{ up }
-        , position{ pos }
-        , direction{ dir }
-    {
-        update_vectors();
-    }
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_RGB,
+        GLsizei(img.size.x), GLsizei(img.size.y), 0, GL_RGB, GL_UNSIGNED_BYTE, img.data.data()
+    );
+    glGenerateMipmap(GL_TEXTURE_2D);
 
-
-    void handle_event(SDL_Event const& ev)
-    {
-        SDL_Window * window = gt::ctx().window;
-
-        switch (ev.type)
-        {
-            case SDL_EVENT_KEY_DOWN:
-            {
-                switch (ev.key.key)
-                {
-                case SDLK_W:
-                    is_w = true;
-                    break;
-                case SDLK_S:
-                    is_s = true;
-                    break;
-                case SDLK_A:
-                    is_a = true;
-                    break;
-                case SDLK_D:
-                    is_d = true;
-                    break;
-                case SDLK_EQUALS:
-                    position = init_position;
-                    yaw = init_yaw;
-                    pitch = init_pitch;
-                    update_vectors();
-                    break;
-                }
-
-                is_lshift = ev.key.mod & SDL_KMOD_LSHIFT;
-
-                bool const new_is_lctrl = ev.key.mod & SDL_KMOD_LCTRL;
-                if (is_lctrl != new_is_lctrl)
-                {
-                    int w, h;
-                    SDL_GetWindowSize(window, &w, &h);
-                    SDL_WarpMouseInWindow(window, f32(w) / 2, f32(h) / 2);
-                    is_lctrl = new_is_lctrl;
-                }
-            }
-            break;
-
-            case SDL_EVENT_KEY_UP:
-            {
-                switch (ev.key.key)
-                {
-                case SDLK_W:
-                    is_w = false;
-                    break;
-                case SDLK_S:
-                    is_s = false;
-                    break;
-                case SDLK_A:
-                    is_a = false;
-                    break;
-                case SDLK_D:
-                    is_d = false;
-                    break;
-                }
-
-                is_lshift = ev.key.mod & SDL_KMOD_LSHIFT;
-
-                bool const new_is_lctrl = ev.key.mod & SDL_KMOD_LCTRL;
-                if (is_lctrl != new_is_lctrl)
-                {
-                    int w, h;
-                    SDL_GetWindowSize(window, &w, &h);
-                    SDL_WarpMouseInWindow(window, f32(w) / 2, f32(h) / 2);
-                    is_lctrl = new_is_lctrl;
-                }
-            }
-            break;
-
-            case SDL_EVENT_MOUSE_MOTION:
-            {
-                if (is_lctrl)
-                {
-                    if (!SDL_SetWindowRelativeMouseMode(window, false))
-                        sdl::log_error();
-                    SDL_ShowCursor();
-                }
-                else
-                {
-                    if (!SDL_SetWindowRelativeMouseMode(window, true))
-                        sdl::log_error();
-                    SDL_HideCursor();
-
-                    pitch -= ev.motion.yrel * 0.05f;
-                    yaw += ev.motion.xrel * 0.05f;
-
-                    pitch = std::clamp(pitch, -89.0f, 89.0f);
-
-                    update_vectors();
-                }
-            }
-            break;
-        }
-    }
-
-    void simulate(f32 d)
-    {
-        f32 const real_speed = speed * (is_lshift ? 4.0f : 1.0f);
-        if (is_w)
-            position += d * real_speed * direction;
-        if (is_s)
-            position -= d * real_speed * direction;
-        if (is_a)
-            position -= right * d * real_speed;
-        if (is_d)
-            position += right * d * real_speed;
-    }
-
-    mat4 view() const
-    {
-        return lookAt(position, position + direction, up);
-    }
-
-private:
-    void update_vectors()
-    {
-        direction[0] = std::cos(radians(pitch)) * std::cos(radians(yaw));
-        direction[1] = std::sin(radians(pitch));
-        direction[2] = std::cos(radians(pitch)) * std::sin(radians(yaw));
-
-        direction = normalize(direction);
-        right = normalize(cross(direction, world_up));
-        up = normalize(cross(right, direction));
-    }
-
-private:
-    vec3 init_position;
-    vec3 init_direction;
-    f32 speed = 0.3f;
-    vec3 world_up{};
-
-    vec3 position{};
-    vec3 direction{};
-
-    vec3 right{};
-    vec3 up{};
-
-    bool is_w{ false };
-    bool is_s{ false };
-    bool is_a{ false };
-    bool is_d{ false };
-    bool is_lshift{ false };
-    bool is_lctrl{ false };
-
-    f32 init_pitch{ 0 };
-    f32 init_yaw{ -90 };
-
-    f32 pitch{ init_pitch };
-    f32 yaw{ init_yaw };
-};
+    return tex;
+}
 
 int main()
 {
@@ -328,12 +174,20 @@ int main()
         }
     }
 
-    std::string_view const suzanne_filepath{ "/home/missed/code/gravity/3d-models/suzanne.obj" };
-    auto suzanne = gt::mesh::from_file(suzanne_filepath);
-    if (!suzanne)
-        throw error{ "[ERROR][ENGINE] can't load mesh: {}", suzanne_filepath };
+    std::string_view const model_filepath{ "/home/missed/code/gravity/assets/sasuke.obj" };
+    std::string_view const texture_filepath{ "/home/missed/code/gravity/assets/sasuke.ppm" };
 
-    GLuint vao = make_vao(*suzanne, { 3 });
+    auto mesh = mesh::from_file(model_filepath);
+    if (!mesh)
+        throw error{ "[ERROR][ENGINE] can't load mesh: {}", model_filepath };
+
+    GLuint vao = make_vao(*mesh, { 3, 2 });
+
+    auto image = image::from_file(texture_filepath);
+    if (!image)
+        throw error{ "[ERROR][ENGINE] can't load image: {}", texture_filepath };
+
+    GLuint tex = make_tex(*image);
 
     vec3 pos{ 0.0f, 0.0f, 0.0f };
     f32 scaling{ 1.0f };
@@ -354,6 +208,9 @@ int main()
             switch (ev.type)
             {
                 case SDL_EVENT_QUIT: return EXIT_SUCCESS;
+                case SDL_EVENT_WINDOW_RESIZED:
+                    glViewport(0, 0, ev.window.data1, ev.window.data2);
+                    break;
             }
         }
 
@@ -381,7 +238,9 @@ int main()
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             glBindVertexArray(vao);
-            glDrawElements(GL_TRIANGLES, GLsizei(suzanne->indices.size()), GL_UNSIGNED_INT, nullptr);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glDrawElements(GL_TRIANGLES, GLsizei(mesh->indices.size()), GL_UNSIGNED_INT, nullptr);
 
             if (!SDL_GL_SwapWindow(ctx.window))
                 sdl::log_error();

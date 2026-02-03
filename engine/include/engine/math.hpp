@@ -13,6 +13,9 @@ namespace gt
     using glm::mat2;
     using glm::mat3;
     using glm::mat4;
+
+    using glm::uvec2;
+
     using glm::perspective;
     using glm::ortho;
     using glm::lookAt;

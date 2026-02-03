@@ -18,6 +18,8 @@ target_sources(
 		include/engine/math.hpp
 		include/engine/ranges.hpp
 		include/engine/mesh.hpp
+		include/engine/image.hpp
+		include/engine/camera.hpp
 
     PRIVATE
     FILE_SET private_headers
@@ -34,6 +36,8 @@ target_sources(
         src/context.cpp
         src/sdl.cpp
         src/mesh.cpp
+        src/image.cpp
+        src/camera.cpp
 )
 target_compile_features(engine PUBLIC cxx_std_20)
 
