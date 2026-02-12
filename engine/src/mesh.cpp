@@ -8,6 +8,8 @@
 #include <cassert>
 #include <filesystem>
 
+#include <SDL3/SDL_log.h>
+
 namespace gt
 {
 
@@ -189,24 +191,23 @@ std::optional<mesh> load(std::istream & in)
 
 }
 
-std::optional<mesh> mesh::from_file( std::string_view path)
+std::optional<mesh> mesh::from_file(std::filesystem::path const& path)
 try
 {
-    std::filesystem::path p{ path };
-
-    std::ifstream in{ p };
+    std::ifstream in{ path };
     if (!in.is_open())
         return std::nullopt;
 
     in.exceptions(std::ifstream::badbit);
 
-    if (p.extension() == ".obj")
+    if (path.extension() == ".obj")
         return obj::load(in);
 
     return std::nullopt;
 }
 catch (std::ifstream::failure const& f)
 {
+    SDL_Log("[ERROR][engine] can't load mesh: %s\n", f.what());
     return std::nullopt;
 }
 

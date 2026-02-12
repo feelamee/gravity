@@ -101,6 +101,5 @@ void log_debug(int line, char const* fn, char const* fmt, ...);
 #ifndef NDEBUG
 #define GT_LOG_DEBUG(...) ::gt::detail::log_debug(__LINE__, __FILE__, __VA_ARGS__)
 #else
-#define LOG_DEBUG(...)
+#define GT_LOG_DEBUG(...)
 #endif
-

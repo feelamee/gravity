@@ -4,8 +4,6 @@
 
 #include <SDL3/SDL.h>
 
-#include <format>
-
 namespace gt
 {
 

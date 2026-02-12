@@ -20,6 +20,7 @@ target_sources(
 		include/engine/mesh.hpp
 		include/engine/image.hpp
 		include/engine/camera.hpp
+		include/engine/gl.hpp
 
     PRIVATE
     FILE_SET private_headers
@@ -38,6 +39,7 @@ target_sources(
         src/mesh.cpp
         src/image.cpp
         src/camera.cpp
+        src/gl.cpp
 )
 target_compile_features(engine PUBLIC cxx_std_20)
 

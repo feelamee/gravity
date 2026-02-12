@@ -6,6 +6,7 @@
 #include <engine/mesh.hpp>
 #include <engine/image.hpp>
 #include <engine/camera.hpp>
+#include <engine/gl.hpp>
 using namespace gt;
 
 #include <SDL3/SDL.h>
@@ -19,20 +20,19 @@ using namespace gt;
 #pragma GCC diagnostic pop
 
 #include <cstdlib>
-#include <vector>
-#include <fstream>
 
 constexpr auto vertex_shader_src = R"(
 #version 320 es
 
 layout (location = 0) in vec3 position;
 layout (location = 1) in vec2 uv;
+layout (location = 2) in vec3 normal;
 
-layout (location = 2) uniform mat4 model;
-layout (location = 3) uniform mat4 view;
-layout (location = 4) uniform mat4 projection;
+layout (location = 3) uniform mat4 model;
+layout (location = 4) uniform mat4 view;
+layout (location = 5) uniform mat4 projection;
 
-layout (location = 5) out vec2 out_uv;
+layout (location = 10) out vec2 out_uv;
 
 void main()
 {
@@ -46,7 +46,7 @@ constexpr auto fragment_shader_src = R"(
 #version 320 es
 precision mediump float;
 
-layout (location = 5) in vec2 uv;
+layout (location = 10) in vec2 uv;
 
 layout (location = 6) uniform sampler2D tex;
 
@@ -58,136 +58,23 @@ void main()
 }
 )";
 
-static void attach_shader(
-    GLuint & program,
-    GLenum type,
-    std::string_view src
-)
-{
-    auto data = src.data();
-    auto const size{ GLint(src.size()) };
-
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &data, &size);
-    glCompileShader(shader);
-
-    {
-        GLint success;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-        if (!success)
-        {
-            GLchar log[1024];
-            glGetShaderInfoLog(shader, 1024, nullptr, log);
-            SDL_Log("[ERROR][OpenGL] shader compilation error: %s\n", log);
-        }
-    }
-
-    glAttachShader(program, shader);
-    glDeleteShader(shader);
-}
-
-static GLuint make_vao(
-    mesh const& mesh,
-    std::vector<u32> const& attrs ///< each attr is count of elements
-)
-{
-    GLuint vao, vbo;
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-
-    glBindVertexArray(vao);
-
-    GLuint ebo;
-    glGenBuffers(1, &ebo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(
-        GL_ELEMENT_ARRAY_BUFFER,
-        GLsizeiptr(mesh.indices.size() * sizeof(mesh.indices[0])),
-        mesh.indices.data(),
-        GL_STATIC_DRAW
-    );
-
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        GLsizeiptr(mesh.vertices.size() * sizeof(mesh.vertices[0])),
-        mesh.vertices.data(),
-        GL_STATIC_DRAW
-    );
-
-    size_t offset = 0;
-    for (auto [i, attr] : vs::enumerate(attrs))
-    {
-        glVertexAttribPointer(
-            GLuint(i),
-            GLint(attr),
-            GL_FLOAT,
-            GL_FALSE,
-            GLsizei(sizeof(vertex)),
-            (void*)offset
-        );
-        offset += attr * sizeof(f32);
-
-        glEnableVertexAttribArray(GLuint(i));
-    }
-
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-
-    return vao;
-}
-
-static GLuint make_tex(image const& img)
-{
-    GLuint tex;
-    glGenTextures(1, &tex);
-
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexImage2D(
-        GL_TEXTURE_2D, 0, GL_RGB,
-        GLsizei(img.size.x), GLsizei(img.size.y), 0, GL_RGB, GL_UNSIGNED_BYTE, img.data.data()
-    );
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    return tex;
-}
-
 int main()
 {
     context ctx;
     glEnable(GL_DEPTH_TEST);
 
-    GLuint shader_program = glCreateProgram();
-    attach_shader(shader_program, GL_FRAGMENT_SHADER, fragment_shader_src);
-    attach_shader(shader_program, GL_VERTEX_SHADER, vertex_shader_src);
-    glLinkProgram(shader_program);
-    {
-        // for some reason linkage errors is not passed into glDebugMessageCallback
-        GLint success;
-        glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
-        if (!success)
-        {
-            GLchar log[1024];
-            glGetProgramInfoLog(shader_program, 1024, nullptr, log);
-            SDL_Log("[ERROR][OpenGL] program linkage error: %s\n", log);
-        }
-    }
+    gl::shader shader_program{ glCreateProgram() };
+    gl::attach_source(shader_program, gl::stage::fragment, fragment_shader_src);
+    gl::attach_source(shader_program, gl::stage::vertex, vertex_shader_src);
+    gl::link(shader_program);
+    GT_SCOPE_EXIT { destroy(shader_program); };
 
-    std::string_view const model_filepath{ "/home/missed/code/gravity/assets/sasuke.obj" };
-    std::string_view const texture_filepath{ "/home/missed/code/gravity/assets/sasuke.ppm" };
+    auto const * model_filepath{ "/home/missed/code/gravity/assets/sasuke.model" };
+    gl::model obj;
+    if (!from_file(0, obj, model_filepath))
+        throw error{ "[ERROR][ENGINE] can't load model: {}", model_filepath };
 
-    auto mesh = mesh::from_file(model_filepath);
-    if (!mesh)
-        throw error{ "[ERROR][ENGINE] can't load mesh: {}", model_filepath };
-
-    GLuint vao = make_vao(*mesh, { 3, 2 });
-
-    auto image = image::from_file(texture_filepath);
-    if (!image)
-        throw error{ "[ERROR][ENGINE] can't load image: {}", texture_filepath };
-
-    GLuint tex = make_tex(*image);
+    GT_SCOPE_EXIT { destroy(obj); };
 
     vec3 pos{ 0.0f, 0.0f, 0.0f };
     f32 scaling{ 1.0f };
@@ -219,7 +106,7 @@ int main()
         }
 
         {
-            glUseProgram(shader_program);
+            bind(shader_program);
 
             mat4 model = scale(
                 rotate(
@@ -230,17 +117,18 @@ int main()
                 vec3{ scaling }
             );
             mat4 projection = perspective(radians(45.0f), 960.0f / 540.0f, 0.01f, 100.0f);
-            glUniformMatrix4fv(2, 1, GL_FALSE, value_ptr(model));
-            glUniformMatrix4fv(3, 1, GL_FALSE, value_ptr(cam.view()));
-            glUniformMatrix4fv(4, 1, GL_FALSE, value_ptr(projection));
+
+            using gt::gl::bind;
+            bind(3, model);
+            bind(4, cam.view());
+            bind(5, projection);
 
             glClearColor(0, 0, 0, 1);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            glBindVertexArray(vao);
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, tex);
-            glDrawElements(GL_TRIANGLES, GLsizei(mesh->indices.size()), GL_UNSIGNED_INT, nullptr);
+            bind(6, obj);
+
+            glDrawElements(GL_TRIANGLES, GLsizei(obj.indices_count), GL_UNSIGNED_INT, nullptr);
 
             if (!SDL_GL_SwapWindow(ctx.window))
                 sdl::log_error();

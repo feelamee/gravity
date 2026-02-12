@@ -21,8 +21,9 @@ static_assert(alignof(vertex) == alignof(f32));
 
 struct mesh
 {
-    static std::optional<mesh> from_file(std::string_view path);
+    static std::optional<mesh> from_file(std::filesystem::path const& path);
 
+    // TODO! use just vector of f32 and add field with attribs info
     std::vector<vertex> vertices;
     std::vector<u32> indices;
 };

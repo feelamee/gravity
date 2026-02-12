@@ -113,7 +113,7 @@ void APIENTRY gl_debug_message_callback(
     void const*
 )
 {
-    static GLuint last_id = GLuint(-1);
+    static GLuint last_id = -1u;
     static unsigned message_strick = 0;
     constexpr unsigned const max_message_strick = 5;
 
