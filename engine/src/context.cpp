@@ -8,6 +8,10 @@
 
 #include <glad/glad.h>
 
+#include <imgui/imgui.h>
+#include <imgui/imgui_impl_sdl3.h>
+#include <imgui/imgui_impl_opengl3.h>
+
 namespace gt
 {
 
@@ -84,11 +88,34 @@ context::context()
     glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 #endif
 
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+
+    ImGui::StyleColorsDark();
+
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+
+    ImGui_ImplSDL3_InitForOpenGL(window, glcontext);
+    ImGui_ImplOpenGL3_Init();
+
     g_context = this;
 }
 
 context::~context()
 {
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+
     SDL_DestroyWindow(window);
     SDL_GL_DestroyContext(glcontext);
     SDL_Quit();

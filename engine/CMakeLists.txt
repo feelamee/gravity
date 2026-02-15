@@ -21,6 +21,8 @@ target_sources(
 		include/engine/image.hpp
 		include/engine/camera.hpp
 		include/engine/gl.hpp
+		include/engine/algorithm.hpp
+		include/engine/imgui.hpp
 
     PRIVATE
     FILE_SET private_headers
@@ -40,6 +42,7 @@ target_sources(
         src/image.cpp
         src/camera.cpp
         src/gl.cpp
+        src/imgui.cpp
 )
 target_compile_features(engine PUBLIC cxx_std_20)
 
@@ -69,7 +72,7 @@ target_link_libraries(
 # TODO! make PRIVATE after removing all SDL/OpenGL code from public interface
 target_link_libraries(engine PUBLIC SDL3::SDL3 glad::glad)
 
-target_link_libraries(engine PUBLIC glm::glm)
+target_link_libraries(engine PUBLIC glm::glm imgui::imgui)
 
 target_precompile_headers(
     engine

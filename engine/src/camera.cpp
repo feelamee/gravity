@@ -32,18 +32,24 @@ void camera::handle_event(SDL_Event const& ev)
         {
             switch (ev.key.key)
             {
-            case SDLK_W:
-                is_w = true;
-                break;
-            case SDLK_S:
-                is_s = true;
-                break;
-            case SDLK_A:
-                is_a = true;
-                break;
-            case SDLK_D:
-                is_d = true;
-                break;
+            case SDLK_W: is_w = is_mouse_middle_button; break;
+            case SDLK_S: is_s = is_mouse_middle_button; break;
+            case SDLK_A: is_a = is_mouse_middle_button; break;
+            case SDLK_D: is_d = is_mouse_middle_button; break;
+            }
+
+            is_lshift = ev.key.mod & SDL_KMOD_LSHIFT;
+        }
+        break;
+
+        case SDL_EVENT_KEY_UP:
+        {
+            switch (ev.key.key)
+            {
+            case SDLK_W: is_w = false; break;
+            case SDLK_S: is_s = false; break;
+            case SDLK_A: is_a = false; break;
+            case SDLK_D: is_d = false; break;
             case SDLK_EQUALS:
                 position = init_position;
                 yaw = init_yaw;
@@ -53,70 +59,50 @@ void camera::handle_event(SDL_Event const& ev)
             }
 
             is_lshift = ev.key.mod & SDL_KMOD_LSHIFT;
-
-            bool const new_is_lctrl = ev.key.mod & SDL_KMOD_LCTRL;
-            if (is_lctrl != new_is_lctrl)
-            {
-                int w, h;
-                SDL_GetWindowSize(window, &w, &h);
-                SDL_WarpMouseInWindow(window, f32(w) / 2, f32(h) / 2);
-                is_lctrl = new_is_lctrl;
-            }
-        }
-        break;
-
-        case SDL_EVENT_KEY_UP:
-        {
-            switch (ev.key.key)
-            {
-            case SDLK_W:
-                is_w = false;
-                break;
-            case SDLK_S:
-                is_s = false;
-                break;
-            case SDLK_A:
-                is_a = false;
-                break;
-            case SDLK_D:
-                is_d = false;
-                break;
-            }
-
-            is_lshift = ev.key.mod & SDL_KMOD_LSHIFT;
-
-            bool const new_is_lctrl = ev.key.mod & SDL_KMOD_LCTRL;
-            if (is_lctrl != new_is_lctrl)
-            {
-                int w, h;
-                SDL_GetWindowSize(window, &w, &h);
-                SDL_WarpMouseInWindow(window, f32(w) / 2, f32(h) / 2);
-                is_lctrl = new_is_lctrl;
-            }
         }
         break;
 
         case SDL_EVENT_MOUSE_MOTION:
+        if (is_mouse_middle_button)
         {
-            if (is_lctrl)
-            {
-                if (!SDL_SetWindowRelativeMouseMode(window, false))
-                    sdl::log_error();
-                SDL_ShowCursor();
-            }
-            else
-            {
-                if (!SDL_SetWindowRelativeMouseMode(window, true))
-                    sdl::log_error();
-                SDL_HideCursor();
+            pitch -= ev.motion.yrel * 0.05f;
+            yaw += ev.motion.xrel * 0.05f;
 
-                pitch -= ev.motion.yrel * 0.05f;
-                yaw += ev.motion.xrel * 0.05f;
+            pitch = std::clamp(pitch, -89.0f, 89.0f);
 
-                pitch = std::clamp(pitch, -89.0f, 89.0f);
+            update_vectors();
+        }
+        break;
 
-                update_vectors();
-            }
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if (ev.button.button == 2)
+        {
+            if (!SDL_SetWindowRelativeMouseMode(window, true))
+                sdl::log_error();
+
+            SDL_HideCursor();
+
+            int w, h;
+            SDL_GetWindowSize(window, &w, &h);
+            SDL_WarpMouseInWindow(window, f32(w) / 2, f32(h) / 2);
+
+            is_mouse_middle_button = true;
+        }
+        break;
+
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (ev.button.button == 2)
+        {
+            int w, h;
+            SDL_GetWindowSize(window, &w, &h);
+            SDL_WarpMouseInWindow(window, f32(w) / 2, f32(h) / 2);
+
+            if (!SDL_SetWindowRelativeMouseMode(window, false))
+                sdl::log_error();
+
+            SDL_ShowCursor();
+
+            is_mouse_middle_button = false;
         }
         break;
     }

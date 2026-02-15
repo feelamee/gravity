@@ -37,7 +37,7 @@ private:
     bool is_a{ false };
     bool is_d{ false };
     bool is_lshift{ false };
-    bool is_lctrl{ false };
+    bool is_mouse_middle_button{ false };
 
     f32 init_pitch{ 0 };
     f32 init_yaw{ -90 };
