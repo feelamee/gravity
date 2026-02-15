@@ -45,7 +45,24 @@ unreachable()
 #endif
 }
 
-// TODO! make ctor tempalte instead of whole class (type-erasure)
+// from https://en.cppreference.com/w/cpp/numeric/byteswap.html
+template<std::integral T>
+constexpr T byteswap(T value) noexcept
+{
+    static_assert(std::has_unique_object_representations_v<T>,
+                  "T may not have padding bits");
+    auto value_representation = std::bit_cast<std::array<byte, sizeof(T)>>(value);
+    std::ranges::reverse(value_representation);
+    return std::bit_cast<T>(value_representation);
+}
+
+template<typename T>
+void hash_combine(sz & seed, T const& v)
+{
+    using std::hash;
+    seed ^= hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
 template<typename Fn>
 class scope_exit
 {

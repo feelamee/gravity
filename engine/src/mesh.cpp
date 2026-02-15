@@ -7,36 +7,25 @@
 #include <unordered_map>
 #include <cassert>
 #include <filesystem>
+#include <numeric>
 
 #include <SDL3/SDL_log.h>
+#include <SDL3/SDL_assert.h>
 
-namespace gt
+namespace gt::obj
 {
 
-namespace
-{
-
-template<typename T>
-void hash_combine(sz & seed, T const& v)
-{
-    using std::hash;
-    seed ^= hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
-
-namespace obj
-{
-
-bool isws(char c)
+static bool isws(char c)
 {
     return c <= ' ';
 }
 
-char const* ltrim_ws(char const* b, char const* e)
+static char const* ltrim_ws(char const* b, char const* e)
 {
     return std::find_if_not(b, e, &isws);
 }
 
-char const* ltrim_n(
+static char const* ltrim_n(
     char const* b, char const* e,
     char const* chars, sz n
 )
@@ -50,7 +39,7 @@ char const* ltrim_n(
 }
 
 template<typename T>
-T parse(char const*& b, char const* e, T v)
+static T parse(char const*& b, char const* e, T v)
 {
     auto [rest, ec] = std::from_chars(b, e, v);
     b = rest;
@@ -76,12 +65,8 @@ index parse<index>(
     return v;
 }
 
-index decrement(index v)
+static index decrement(index v)
 {
-    assert(v.v > 0);
-    assert(v.t > 0);
-    assert(v.n > 0);
-
     v.v -= 1;
     v.t -= 1;
     v.n -= 1;
@@ -90,7 +75,7 @@ index decrement(index v)
 }
 
 template<typename C, typename Proj = std::identity>
-void parse_n(
+static void parse_n(
     char const*& b, char const* e,
     size_t n,
     C & out,
@@ -105,10 +90,8 @@ void parse_n(
     }
 }
 
-std::optional<mesh> load(std::istream & in)
+static bool load(mesh & m, std::istream & in)
 {
-    mesh m;
-
     std::vector<f32> positions, texcoords, normals;
     std::vector<index> indices;
 
@@ -138,6 +121,22 @@ std::optional<mesh> load(std::istream & in)
         }
     }
 
+    if (!positions.empty())
+        m.attribs.push_back(attrib::pos);
+    if (!texcoords.empty())
+        m.attribs.push_back(attrib::uv);
+    if (!normals.empty())
+        m.attribs.push_back(attrib::normal);
+
+    struct vertex
+    {
+        f32 pos[attrib_size(attrib::pos)];
+        f32 uv[attrib_size(attrib::uv)];
+        f32 normal[attrib_size(attrib::normal)];
+
+        constexpr auto operator<=>(vertex const&) const = default;
+    };
+
     struct hash_vertex
     {
         sz operator()(vertex const& v) const
@@ -160,55 +159,92 @@ std::optional<mesh> load(std::istream & in)
     std::unordered_map<vertex, u32, hash_vertex> uniq_vertices;
     for (auto [v, t, n] : indices)
     {
-        vertex vert{
-            .pos = {
-                positions[v*3 + 0],
-                positions[v*3 + 1],
-                positions[v*3 + 2],
-            },
-            .uv = {
-                texcoords[t*2 + 0],
-                texcoords[t*2 + 1],
-            },
-            .normal = {
-                normals[n*3 + 0],
-                normals[n*3 + 1],
-                normals[n*3 + 2],
-            },
-        };
+        vertex vert{};
 
-        auto [it, inserted] = uniq_vertices.emplace(vert, m.vertices.size());
+        if (!positions.empty())
+        {
+            sz size = attrib_size(attrib::pos);
+            for (sz i = 0; i < size; ++i)
+                vert.pos[i] = positions[v*size + i];
+        }
+
+        if (!texcoords.empty())
+        {
+            sz size = attrib_size(attrib::uv);
+            for (sz i = 0; i < size; ++i)
+                vert.uv[i] = texcoords[t*size + i];
+        }
+
+        if (!normals.empty())
+        {
+            sz size = attrib_size(attrib::normal);
+            for (sz i = 0; i < size; ++i)
+                vert.normal[i] = normals[n*size + i];
+        }
+
+        SDL_assert(m.vertices.size() % m.stride() == 0);
+        auto [it, inserted] = uniq_vertices.emplace(vert, m.vertices.size() / m.stride());
         if (inserted)
-            m.vertices.push_back(vert);
+        {
+            if (!positions.empty())
+                m.vertices.insert(end(m.vertices), vert.pos, vert.pos + attrib_size(attrib::pos));
+
+            if (!texcoords.empty())
+                m.vertices.insert(end(m.vertices), vert.uv, vert.uv + attrib_size(attrib::uv));
+
+            if (!normals.empty())
+                m.vertices.insert(end(m.vertices), vert.normal, vert.normal + attrib_size(attrib::normal));
+        }
 
         m.indices.push_back(it->second);
     }
 
-    return m;
+    return true;
 }
 
 }
 
+namespace gt
+{
+
+sz mesh::stride() const
+{
+    sz r = 0;
+    for (attrib a : attribs)
+        r += attrib_size(a);
+
+    return r;
 }
 
-std::optional<mesh> mesh::from_file(std::filesystem::path const& path)
+sz mesh::bytestride() const
+{
+    sz r = 0;
+    for (attrib a : attribs)
+        r += attrib_bytesize(a);
+
+    return r;
+}
+
+bool from_file(mesh & m, std::filesystem::path const& path)
 try
 {
     std::ifstream in{ path };
     if (!in.is_open())
-        return std::nullopt;
+        return false;
 
     in.exceptions(std::ifstream::badbit);
 
-    if (path.extension() == ".obj")
-        return obj::load(in);
+    auto const ext = path.extension();
+    if (ext == ".obj")
+        return obj::load(m, in);
 
-    return std::nullopt;
+    SDL_Log("[ERROR][engine] can't load mesh: unsupported format %s\n", ext.c_str());
+    return false;
 }
 catch (std::ifstream::failure const& f)
 {
     SDL_Log("[ERROR][engine] can't load mesh: %s\n", f.what());
-    return std::nullopt;
+    return false;
 }
 
-} // namespace orbi
+} // namespace gt

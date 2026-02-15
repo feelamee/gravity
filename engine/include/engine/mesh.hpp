@@ -2,30 +2,50 @@
 
 #include <engine/fundamental.hpp>
 
-#include <optional>
-#include <string_view>
 #include <vector>
 
 namespace gt
 {
 
-struct vertex
+enum class attrib
 {
-    f32 pos[3];
-    f32 uv[2];
-    f32 normal[3];
-
-    auto operator<=>(vertex const&) const = default;
+    pos,
+    uv,
+    normal,
 };
-static_assert(alignof(vertex) == alignof(f32));
+
+// sizeof attrib in f32's
+// TODO! make in bytes + add various attrib types
+constexpr sz attrib_size(attrib a)
+{
+    using enum attrib;
+    switch (a)
+    {
+    case pos: return 3;
+    case uv: return 2;
+    case normal: return 3;
+    }
+
+    unreachable();
+}
+
+constexpr sz attrib_bytesize(attrib a)
+{
+    return attrib_size(a) * sizeof(f32);
+}
 
 struct mesh
 {
-    static std::optional<mesh> from_file(std::filesystem::path const& path);
-
-    // TODO! use just vector of f32 and add field with attribs info
-    std::vector<vertex> vertices;
+    std::vector<attrib> attribs;
+    std::vector<f32> vertices;
     std::vector<u32> indices;
+
+    // vertex stride == sum of attrib_size
+    sz stride() const;
+    // vertex stride == sum of attrib_bytesize
+    sz bytestride() const;
 };
+
+bool from_file(mesh & m, std::filesystem::path const& path);
 
 }

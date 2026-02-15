@@ -56,10 +56,10 @@ void attach_source(shader & s, stage stage, std::string_view source)
     glDeleteShader(shader);
 }
 
-void attach_file(shader & s, stage stage, char const* path)
+void attach_file(shader & s, stage stage, std::filesystem::path const& path)
 {
     sz size;
-    void * data = SDL_LoadFile(path, &size);
+    void * data = SDL_LoadFile(path.c_str(), &size);
     if (!data)
     {
         sdl::log_error();
@@ -70,8 +70,17 @@ void attach_file(shader & s, stage stage, char const* path)
     SDL_free(data);
 }
 
-static void make_vao(model & m, mesh const& mesh, u32 location)
+struct vao_info
 {
+    vertex_array vao;
+    buffer vbo;
+    buffer ebo;
+};
+
+static vao_info make_vao(mesh const& mesh, u32 location)
+{
+    vao_info m;
+
     glGenVertexArrays(1, &m.vao.id);
     glGenBuffers(1, &m.vbo.id);
 
@@ -95,18 +104,17 @@ static void make_vao(model & m, mesh const& mesh, u32 location)
     );
 
     sz offset = 0;
-    auto attrs = { 3, 2, 3 };
-    for (auto [i, attr] : vs::enumerate_with<GLuint>(attrs))
+    for (auto [i, attr] : vs::enumerate_with<GLuint>(mesh.attribs))
     {
         glVertexAttribPointer(
             location + i,
-            GLint(attr),
+            GLint(attrib_size(attr)),
             GL_FLOAT,
             GL_FALSE,
-            GLsizei(sizeof(vertex)),
+            GLsizei(mesh.bytestride()),
             (void*)offset
         );
-        offset += sz(attr) * sizeof(f32);
+        offset += attrib_bytesize(attr);
 
         glEnableVertexAttribArray(location + i);
     }
@@ -115,38 +123,59 @@ static void make_vao(model & m, mesh const& mesh, u32 location)
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
+    return m;
+}
+
+static void make_vao(model & m, mesh const& mesh, u32 location)
+{
+    auto info = make_vao(mesh, location);
+    m.vao = info.vao;
+    m.vbo = info.vbo;
+    m.ebo = info.ebo;
     m.indices_count = mesh.indices.size();
 }
 
-static void make_tex(model & m, image const& img)
+static texture make_tex(image const& img)
 {
-    texture tex;
+    texture tex{ .type = GL_TEXTURE_2D };
     glGenTextures(1, &tex.id);
 
-    glBindTexture(GL_TEXTURE_2D, tex);
+    glBindTexture(tex.type, tex);
     glTexImage2D(
         GL_TEXTURE_2D, 0, GL_RGB,
         GLsizei(img.size.x), GLsizei(img.size.y), 0, GL_RGB, GL_UNSIGNED_BYTE, img.data.data()
     );
     glGenerateMipmap(GL_TEXTURE_2D);
 
-    m.textures.push_back(tex);
+    return tex;
 }
 
-bool from_file(u32 location, model & m, std::filesystem::path const& path)
+static texture make_tex(cubemap const& cm)
+{
+    texture tex{ .type = GL_TEXTURE_CUBE_MAP };
+    glGenTextures(1, &tex.id);
+
+    glBindTexture(tex.type, tex);
+    for(auto const& [i, img] : vs::enumerate_with<GLenum>(cm.data))
+    {
+        glTexImage2D(
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,  0, GL_RGB,
+            GLsizei(img.size.x), GLsizei(img.size.y), 0, GL_RGB, GL_UNSIGNED_BYTE, img.data.data()
+        );
+    }
+    glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+
+    return tex;
+}
+
+bool from_file(model & m, u32 location, std::filesystem::path const& path)
 {
     namespace fs = std::filesystem;
-    auto get_path = [&](auto const& s) -> std::optional<fs::path>
-    {
-        fs::path p{ path.parent_path() / s };
-
-        if (!fs::is_regular_file(p))
-            return std::nullopt;
-
-        return p;
-    };
 
     bool has_mesh = false;
+    image img;
+    cubemap cubemap;
+    mesh mesh;
 
     std::ifstream in{ path };
     std::string line;
@@ -158,20 +187,24 @@ bool from_file(u32 location, model & m, std::filesystem::path const& path)
 
         std::string_view var{ line.data(), pos };
         std::string_view value{ line.data() + pos + 1 };
+        fs::path abspath{ path.parent_path() / value };
         if (var == "mesh")
         {
-            if (auto p = get_path(value))
-                if (auto mesh = mesh::from_file(*p))
-                {
-                    make_vao(m, *mesh, location);
-                    has_mesh = true;
-                }
+            if (from_file(mesh, abspath))
+            {
+                make_vao(m, mesh, location);
+                has_mesh = true;
+            }
         }
-        if (var == "texture")
+        else if (var == "texture")
         {
-            if (auto p = get_path(value))
-                if (auto img = image::from_file(*p))
-                    make_tex(m, *img);
+            if (from_file(img, abspath))
+                m.textures.push_back(make_tex(img));
+        }
+        else if (var == "cubemap")
+        {
+            if (from_file(cubemap, abspath))
+                m.textures.push_back(make_tex(cubemap));
         }
     }
 
@@ -183,6 +216,28 @@ bool from_file(u32 location, model & m, std::filesystem::path const& path)
 
     // TODO! if have no textures insert default
     return has_mesh;
+}
+
+bool from_file(texture & tex, GLenum type, std::filesystem::path const& path)
+{
+    if (type == GL_TEXTURE_2D)
+    {
+        image img;
+        if (!from_file(img, path))
+            return false;
+
+        tex = make_tex(img);
+    }
+    else if (type == GL_TEXTURE_CUBE_MAP)
+    {
+        cubemap cm;
+        if (!from_file(cm, path))
+            return false;
+
+        tex = make_tex(cm);
+    }
+
+    return true;
 }
 
 void bind(shader const& m)
@@ -199,7 +254,8 @@ void bind(u32 location, u32 unit, texture const& tex)
 {
     glUniform1i(GLint(location), GLint(unit));
     glActiveTexture(GL_TEXTURE0 + GLenum(unit));
-    glBindTexture(GL_TEXTURE_2D, tex);
+
+    glBindTexture(tex.type, tex);
 }
 
 void bind(u32 location, model const& m)

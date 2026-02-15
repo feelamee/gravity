@@ -1,6 +1,7 @@
 #pragma once
 
 #include <engine/fundamental.hpp>
+#include <engine/mesh.hpp>
 
 #include <glad/glad.h>
 
@@ -31,10 +32,13 @@ enum class stage : GLenum
 
 void link(shader &);
 void attach_source(shader &, stage, std::string_view source);
-void attach_file(shader &, stage, char const* path);
+void attach_file(shader &, stage, std::filesystem::path const& path);
 
 struct buffer : detail::resource {};
-struct texture : detail::resource {};
+struct texture : detail::resource
+{
+    GLenum type;
+};
 struct vertex_array : detail::resource {};
 
 struct model
@@ -46,7 +50,8 @@ struct model
     sz indices_count;
 };
 
-bool from_file(u32 location, model & m, std::filesystem::path const& path);
+bool from_file(model & m, u32 location, std::filesystem::path const& path);
+bool from_file(texture &, GLenum type, std::filesystem::path const& path);
 
 void bind(shader const&);
 void bind(vertex_array const&);

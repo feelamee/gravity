@@ -110,7 +110,6 @@ void camera::handle_event(SDL_Event const& ev)
 
 void camera::simulate(f32 d)
 {
-
     f32 const real_speed = speed * (is_lshift ? 4.0f : 1.0f);
     if (is_w)
         position += d * real_speed * direction;

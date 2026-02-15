@@ -62,6 +62,40 @@ void main()
 }
 )";
 
+constexpr auto skybox_vertex_shader_src = R"(
+#version 320 es
+precision mediump float;
+
+layout (location = 0) in vec3 pos;
+
+layout (location = 1) uniform mat4 view;
+layout (location = 2) uniform mat4 projection;
+
+layout (location = 10) out vec3 out_uv;
+
+void main()
+{
+    out_uv = pos;
+    gl_Position = (projection * mat4(mat3(view)) * vec4(pos, 1.0)).xyww;
+}
+)";
+
+constexpr auto skybox_fragment_shader_src = R"(
+#version 320 es
+precision mediump float;
+
+layout (location = 10) in vec3 uv;
+
+layout (location = 3) uniform samplerCube cubemap;
+
+out vec4 out_color;
+
+void main()
+{
+    out_color = texture(cubemap, uv);
+}
+)";
+
 int main()
 {
     // enable if you want ImGui Viewports support
@@ -77,12 +111,23 @@ int main()
     gl::link(shader_program);
     GT_SCOPE_EXIT { destroy(shader_program); };
 
-    auto const * model_filepath{ "/home/missed/code/gravity/assets/sasuke.model" };
-    gl::model obj;
-    if (!from_file(0, obj, model_filepath))
+    constexpr static auto model_filepath{ "/home/missed/code/gravity/assets/sasuke/sasuke.model" };
+    gl::model sasuke_model;
+    if (!from_file(sasuke_model, 0, model_filepath))
         throw error{ "[ERROR][ENGINE] can't load model: {}", model_filepath };
 
-    GT_SCOPE_EXIT { destroy(obj); };
+    GT_SCOPE_EXIT { destroy(sasuke_model); };
+
+    gl::shader skybox_shader_program{ glCreateProgram() };
+    gl::attach_source(skybox_shader_program, gl::stage::fragment, skybox_fragment_shader_src);
+    gl::attach_source(skybox_shader_program, gl::stage::vertex, skybox_vertex_shader_src);
+    gl::link(skybox_shader_program);
+    GT_SCOPE_EXIT { destroy(skybox_shader_program); };
+
+    constexpr static auto skybox_filepath{ "/home/missed/code/gravity/assets/skybox/skybox.model" };
+    gl::model skybox_model;
+    if (!from_file(skybox_model, 0, skybox_filepath))
+        throw error{ "[ERROR][ENGINE] can't load model: {}", skybox_filepath };
 
     vec3 pos{ 0.0f, 0.0f, 0.0f };
     f32 scaling{ 1.0f };
@@ -96,7 +141,6 @@ int main()
     struct
     {
         bool show_demo_window{ false };
-        ImVec4 clear_color{ 0.45f, 0.55f, 0.60f, 1.00f };
     } imgui_state;
 
     for(;;)
@@ -148,6 +192,13 @@ int main()
             cam.simulate(delta_time);
         }
 
+        int w = 960, h = 540;
+        if (!SDL_GetWindowSize(ctx.window, &w, &h))
+            sdl::log_error();
+
+        mat4 const projection = perspective(radians(45.0f), f32(w) / f32(h), 0.01f, 100.0f);
+        mat4 const view = cam.view();
+
         {
             bind(shader_program);
 
@@ -159,22 +210,29 @@ int main()
                 ),
                 vec3{ scaling }
             );
-            mat4 projection = perspective(radians(45.0f), 960.0f / 540.0f, 0.01f, 100.0f);
 
             using gt::gl::bind;
             bind(3, model);
-            bind(4, cam.view());
+            bind(4, view);
             bind(5, projection);
-            bind(6, obj);
+            bind(6, sasuke_model);
 
-            glClearColor(
-                imgui_state.clear_color.x * imgui_state.clear_color.w,
-                imgui_state.clear_color.y * imgui_state.clear_color.w,
-                imgui_state.clear_color.z * imgui_state.clear_color.w,
-                imgui_state.clear_color.w
-            );
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            glDrawElements(GL_TRIANGLES, GLsizei(obj.indices_count), GL_UNSIGNED_INT, nullptr);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glDrawElements(GL_TRIANGLES, GLsizei(sasuke_model.indices_count), GL_UNSIGNED_INT, nullptr);
+        }
+
+        {
+            glDepthFunc(GL_LEQUAL);
+            bind(skybox_shader_program);
+
+            using gt::gl::bind;
+            bind(1, view);
+            bind(2, projection);
+            bind(3, skybox_model);
+
+            glDrawElements(GL_TRIANGLES, GLsizei(skybox_model.indices_count), GL_UNSIGNED_INT, nullptr);
+            glDepthFunc(GL_LESS);
         }
 
         {
